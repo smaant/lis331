@@ -1,0 +1,2 @@
+@ECHO OFF
+"C:\Program Files (x86)\Atmel\AVR Tools\AvrAssembler2\avrasm2.exe" -S "\\psf\Home\Documents\src\atmel\lis331\labels.tmp" -fI -W+ie -C V2 -o "\\psf\Home\Documents\src\atmel\lis331\lis331.hex" -d "\\psf\Home\Documents\src\atmel\lis331\lis331.obj" -e "\\psf\Home\Documents\src\atmel\lis331\lis331.eep" -m "\\psf\Home\Documents\src\atmel\lis331\lis331.map" "\\psf\Home\Documents\src\atmel\lis331\tiny_lis331.asm"
