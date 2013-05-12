@@ -16,12 +16,24 @@
 
 .equ LIS_ADDRESS = 0x19
 
-.equ LIS_NORMAL_POWER = 0x1
-.equ LIS_ODR_50 = 0x0
-.equ LIS_Z_EN = 0x1
-.equ LIS_Y_EN = 0x1
-.equ LIS_X_EN = 0x1
+; Config constants
+; CTRL_REG1
+.equ LIS_NORMAL_POWER = 5
+.equ LIS_ODR = 3
+.equ LIS_Z_EN = 2
+.equ LIS_Y_EN = 1
+.equ LIS_X_EN = 0
 
+;CTRL_REG4
+.equ LIS_BDU = 7
+.equ LIS_BLE = 6
+.equ LIS_FS = 4
+.equ LIS_ST_SIGN = 2
+.equ LIS_ST = 1
+.equ LIS_SIM = 0
+
+; Registers addresses
+.equ LIS_CTRL_REG1 = 0x20
 .equ LIS_X_L = 0x28
  
 ; End macro.inc ===========================================
@@ -178,60 +190,73 @@ Reset:
 	ldi r16, LIS_ADDRESS << 1 | 0
 	rcall I2C_Trasmit
 
-	ldi r16, 0x20		; CTRL_REG1
+	ldi r16, (1 << 7) | LIS_CTRL_REG1
 	rcall I2C_Trasmit
 
-	ldi r16, (LIS_NORMAL_POWER << 5) | (LIS_ODR_50 << 3) | (LIS_Z_EN << 2) | (LIS_Y_EN << 1) | (LIS_X_EN)
+	; ldi r16, (LIS_NORMAL_POWER << 5) | (LIS_ODR_50 << 3) | (LIS_Z_EN << 2) | (LIS_Y_EN << 1) | (LIS_X_EN)
+	ldi r16, (1 << LIS_NORMAL_POWER) | (0 << LIS_ODR) | (1 << LIS_Z_EN) | (1 << LIS_Y_EN) | (1 << LIS_X_EN) ; CTRL_REG1
+	rcall I2C_Trasmit
+
+	ldi r16, 0 			; CTRL_REG2
+	rcall I2C_Trasmit
+
+	ldi r16, 0 			; CTRL_REG3
+	rcall I2C_Trasmit
+
+	ldi r16, (1 << LIS_BDU) | (1 << LIS_BLE) | (0 << LIS_FS) | (0 << LIS_ST_SIGN) | (0 << LIS_ST) | (0 << LIS_SIM) ; CTRL_REG4
 	rcall I2C_Trasmit
 
 	rcall I2C_SendStop	
 
 
-	rcall I2C_SendStart
 
-	ldi r16, LIS_ADDRESS << 1 | 0
-	rcall I2C_Trasmit
-	sbrc r16, 0
-	rjmp Read_NACK
 
-	ldi r16, 0x20
-	rcall I2C_Trasmit
-	sbrc r16, 0
-	rjmp Read_NACK
 
-	rcall I2C_SendStart
+; 	rcall I2C_SendStart
 
-	ldi r16, LIS_ADDRESS << 1 | 1
-	rcall I2C_Trasmit
-	sbrc r16, 0
-	rjmp Read_NACK
+; 	ldi r16, LIS_ADDRESS << 1 | 0
+; 	rcall I2C_Trasmit
+; 	sbrc r16, 0
+; 	rjmp Read_NACK
 
-	clr r25
+; 	ldi r16, (0x1 << 7) | 0x20
+; 	rcall I2C_Trasmit
+; 	sbrc r16, 0
+; 	rjmp Read_NACK
 
-Read_Loop:
-	ldi r16, 0x0
-	rcall I2C_Receive
+; 	rcall I2C_SendStart
 
-	rcall Bin2BSD_8
-	rcall PrintBSD8
+; 	ldi r16, LIS_ADDRESS << 1 | 1
+; 	rcall I2C_Trasmit
+; 	sbrc r16, 0
+; 	rjmp Read_NACK
 
-	ldi r19, 13
-	rcall Print
+; 	clr r25
 
-	inc r25
-	cpi r25, 24
-	brne Read_Loop
+; Read_Loop:
+; 	ldi r16, 0x0
+; 	rcall I2C_Receive
 
-	ldi r16, 0x1
-	rcall I2C_Receive
+; 	rcall Bin2BSD_8
+; 	rcall PrintBSD8
 
-	rjmp Read_Exit
+; 	ldi r19, 13
+; 	rcall Print
 
-Read_NACK:
-	mprintln "READ NACK"
+; 	inc r25
+; 	cpi r25, 24
+; 	brne Read_Loop
 
-Read_Exit:
-	rcall I2C_SendStop
+; 	ldi r16, 0x1
+; 	rcall I2C_Receive
+
+; 	rjmp Read_Exit
+
+; Read_NACK:
+; 	mprintln "READ NACK"
+
+; Read_Exit:
+; 	rcall I2C_SendStop
 
  
 ; End External Hardware Init ==============================
@@ -263,12 +288,12 @@ Main:
 	cpi r16, 0x42
 	brcs NoMatch
 	; cpi r17, 0x0f
-	cpi r17, 0x08
+	cpi r17, 0x02
 	brcs NoMatch
 
 Match:
 	; invbm PORTD, 6
-	rjmp END_LOOP
+	; rjmp END_LOOP
 
 	rcall I2C_SendStart
 
@@ -279,7 +304,7 @@ Match:
 	; ; rjmp PC - 3
 	; rjmp NACK
 
-	ldi r16, LIS_X_L
+	ldi r16, (0x1 << 7) | LIS_X_L
 	rcall I2C_Trasmit
 	; sbrc r16, 0
 	; ; rjmp PC - 3
