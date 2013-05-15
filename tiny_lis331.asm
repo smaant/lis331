@@ -327,126 +327,10 @@ Match:
 	; invbm PORTD, 6
 	; rjmp END_LOOP
 
-	rcall I2C_SendStart
+	rcall LIS_Update
 
-	;Transmit
-	ldi r16, LIS_ADDRESS << 1 | 0
-	rcall I2C_Trasmit
-	sbrc r16, 0
-	; ; rjmp PC - 3
-	rjmp NACK
+	rcall LIS_TestPrint
 
-	ldi r16, (1 << 7) | LIS_X_L
-	rcall I2C_Trasmit
-	; sbrc r16, 0
-	; ; ; rjmp PC - 3
-	; rjmp NACK
-
-	rcall I2C_SendStart
-
-	ldi r16, LIS_ADDRESS << 1 | 1
-	rcall I2C_Trasmit	
-	sbrc r16, 0
-	; rjmp PC - 3
-	rjmp NACK
-
-
-	; ================ READ ALL ==============
-	ldi r16, 0x0
-	rcall I2C_Receive
-	sts X_MSB, r16
-
-	ldi r16, 0x0
-	rcall I2C_Receive
-	sts X_LSB, r16
-
-
-	ldi r16, 0x0
-	rcall I2C_Receive
-	sts Y_MSB, r16
-
-	ldi r16, 0x0
-	rcall I2C_Receive
-	sts Y_LSB, r16
-
-
-	ldi r16, 0x0
-	rcall I2C_Receive
-	sts Z_MSB, r16
-
-	ldi r16, 0x1
-	rcall I2C_Receive
-	sts Z_LSB, r16
-
-	rcall I2C_SendStop
-
-	; ============= PRINT ================
-	lds r16, X_MSB
-	rcall Bin2BSD_8
-	rcall PrintBSD8
-
-	ldi r19, ' '
-	rcall Print
-
-	lds r16, X_LSB
-	rcall Bin2BSD_8
-	rcall PrintBSD8
-			
-	ldi r19, '\t'
-	rcall Print
-	ldi r19, '\t'
-	rcall Print
-
-
-	lds r16, Y_MSB
-	rcall Bin2BSD_8
-	rcall PrintBSD8
-
-	ldi r19, ' '
-	rcall Print
-
-	lds r16, Y_LSB
-	rcall Bin2BSD_8
-	rcall PrintBSD8
-			
-	ldi r19, '\t'
-	rcall Print
-	ldi r19, '\t'
-	rcall Print
-
-
-	lds r16, Z_MSB
-	rcall Bin2BSD_8
-	rcall PrintBSD8
-
-	ldi r19, ' '
-	rcall Print
-
-	lds r16, Z_LSB
-	rcall Bin2BSD_8
-	rcall PrintBSD8
-
-	rjmp I2C_STOP
-
-NACK:
-	; mprintln "NACK"
-	rcall I2C_SendStop
-	rjmp Match
-
-I2C_STOP:
-	; rcall I2C_SendStop
-
-	; rcall I2C_SendStart
-	; ldi r16, LIS_ADDRESS << 1 | 0
-	; rcall I2C_Trasmit
-	; ldi r16, 0x0f
-	; rcall I2C_Trasmit	
-	; rcall I2C_SendStop
-
-	; pop r16
-
-	ldi r19, 13
-	rcall Print	
 
 END_LOOP:
 	clr r16
@@ -812,6 +696,152 @@ Bin2BSD_16_400_or_less:
 
 Bin2BSD_16_done:
 	ret
+
+
+
+; --------------------------------------------
+; LIS_Update
+; Read X, Y and Z acceleration values and store them in a memory
+;
+; IN:	None
+
+; OUT:	X_MSB, X_LSB, Y_MSB, Y_LSB, Z_MSB, Z_LSB
+;		These variable have to be defined the DSEG
+; --------------------------------------------
+LIS_Update:
+	clr r16
+	push r16	; Counter for repetitions after unsuccessful attempts
+
+	rcall I2C_SendStart
+
+	; Establish writing connection
+	ldi r16, LIS_ADDRESS << 1 | 0
+	rcall I2C_Trasmit
+	sbrc r16, 0
+	rjmp NACK
+
+	; Reading multiple bytes starting from LIS_X_L address
+	ldi r16, (1 << 7) | LIS_X_L
+	rcall I2C_Trasmit
+	sbrc r16, 0
+	rjmp NACK
+
+	; Restart to start reading
+	rcall I2C_SendStart
+
+	; Establish reading connection
+	ldi r16, LIS_ADDRESS << 1 | 1
+	rcall I2C_Trasmit	
+	sbrc r16, 0
+	rjmp NACK
+
+	; ================ READ ALL ==============
+	ldi r16, 0x0
+	rcall I2C_Receive
+	sts X_MSB, r16
+
+	ldi r16, 0x0
+	rcall I2C_Receive
+	sts X_LSB, r16
+
+
+	ldi r16, 0x0
+	rcall I2C_Receive
+	sts Y_MSB, r16
+
+	ldi r16, 0x0
+	rcall I2C_Receive
+	sts Y_LSB, r16
+
+
+	ldi r16, 0x0
+	rcall I2C_Receive
+	sts Z_MSB, r16
+
+	ldi r16, 0x1
+	rcall I2C_Receive
+	sts Z_LSB, r16
+
+
+	rcall I2C_SendStop
+	rjmp LIS_Update_Exit	; Successful attempt, exit
+
+NACK:
+	rcall I2C_SendStop
+
+	pop r16		; Increasing amount of repetitions
+	inc r16
+	push r16
+
+	cpi r16, 3				; Exit if >= 3
+	brge LIS_Update_Exit
+
+	rjmp LIS_Update
+
+LIS_Update_Exit:
+	ret
+
+
+; --------------------------------------------
+; LIS_TestPrint
+; Send X, Y and Z acceleration values to a UART
+;
+; IN:	X_MSB, X_LSB, Y_MSB, Y_LSB, Z_MSB, Z_LSB
+;		all variables should be presented in the DSEG
+;
+; OUT:	None
+; --------------------------------------------
+LIS_TestPrint:
+	lds r16, X_MSB
+	rcall Bin2BSD_8
+	rcall PrintBSD8
+
+	ldi r19, ' '
+	rcall Print
+
+	lds r16, X_LSB
+	rcall Bin2BSD_8
+	rcall PrintBSD8
+			
+	ldi r19, '\t'
+	rcall Print
+	ldi r19, '\t'
+	rcall Print
+
+
+	lds r16, Y_MSB
+	rcall Bin2BSD_8
+	rcall PrintBSD8
+
+	ldi r19, ' '
+	rcall Print
+
+	lds r16, Y_LSB
+	rcall Bin2BSD_8
+	rcall PrintBSD8
+			
+	ldi r19, '\t'
+	rcall Print
+	ldi r19, '\t'
+	rcall Print
+
+
+	lds r16, Z_MSB
+	rcall Bin2BSD_8
+	rcall PrintBSD8
+
+	ldi r19, ' '
+	rcall Print
+
+	lds r16, Z_LSB
+	rcall Bin2BSD_8
+	rcall PrintBSD8
+
+	ldi r19, 13
+	rcall Print
+
+	ret
+
 
 ; End Procedure ===========================================
 
