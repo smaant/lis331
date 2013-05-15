@@ -196,28 +196,7 @@ Reset:
 ; External Hardware Init  =================================
 
 	; LIS331DLH Init
-	rcall I2C_SendStart
-
-	ldi r16, LIS_ADDRESS << 1 | 0
-	rcall I2C_Trasmit
-
-	ldi r16, (1 << 7) | LIS_CTRL_REG1
-	rcall I2C_Trasmit
-
-	ldi r16, (1 << LIS_NORMAL_POWER) | (0 << LIS_ODR) | (1 << LIS_Z_EN) | (1 << LIS_Y_EN) | (1 << LIS_X_EN) ; CTRL_REG1
-	rcall I2C_Trasmit
-
-	ldi r16, 0 			; CTRL_REG2
-	rcall I2C_Trasmit
-
-	ldi r16, 0 			; CTRL_REG3
-	rcall I2C_Trasmit
-
-	ldi r16, (1 << LIS_BDU) | (1 << LIS_BLE) | (0 << LIS_FS) | (0 << LIS_ST_SIGN) | (0 << LIS_ST) | (0 << LIS_SIM) ; CTRL_REG4
-	rcall I2C_Trasmit
-
-	rcall I2C_SendStop	
-
+	rcall LIS_Init
 
 	rcall I2C_Delay
 
@@ -836,6 +815,40 @@ LIS_PrintMemory_NACK:
 LIS_PrintMemory_Exit:
 	rcall I2C_SendStop
 	ret
+
+
+; --------------------------------------------
+; LIS_Init
+; Init MEMS to work at Normal power mode with x, y and z axes enabled.
+; BDU (block data update) enabled. Big endian for acceleration values selected.
+;
+; IN:	None
+; Out:	None
+; --------------------------------------------
+LIS_Init:
+	rcall I2C_SendStart
+
+	ldi r16, LIS_ADDRESS << 1 | 0
+	rcall I2C_Trasmit
+
+	ldi r16, (1 << 7) | LIS_CTRL_REG1
+	rcall I2C_Trasmit
+
+	ldi r16, (1 << LIS_NORMAL_POWER) | (0 << LIS_ODR) | (1 << LIS_Z_EN) | (1 << LIS_Y_EN) | (1 << LIS_X_EN) ; CTRL_REG1
+	rcall I2C_Trasmit
+
+	ldi r16, 0 			; CTRL_REG2
+	rcall I2C_Trasmit
+
+	ldi r16, 0 			; CTRL_REG3
+	rcall I2C_Trasmit
+
+	ldi r16, (1 << LIS_BDU) | (1 << LIS_BLE) | (0 << LIS_FS) | (0 << LIS_ST_SIGN) | (0 << LIS_ST) | (0 << LIS_SIM) ; CTRL_REG4
+	rcall I2C_Trasmit
+
+	rcall I2C_SendStop
+	ret
+
 
 ; End Procedure ===========================================
 
