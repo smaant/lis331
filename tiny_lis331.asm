@@ -219,71 +219,10 @@ Reset:
 	rcall I2C_SendStop	
 
 
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
+	rcall I2C_Delay
 
+	rcall LIS_PrintMemory
 
-	rcall I2C_SendStart
-
-	ldi r16, LIS_ADDRESS << 1 | 0
-	rcall I2C_Trasmit
-	sbrc r16, 0
-	rjmp Read_NACK
-
-	ldi r16, (1 << 7) | 0x20
-	rcall I2C_Trasmit
-	sbrc r16, 0
-	rjmp Read_NACK
-
-	rcall I2C_SendStart
-
-	ldi r16, LIS_ADDRESS << 1 | 1
-	rcall I2C_Trasmit
-	sbrc r16, 0
-	rjmp Read_NACK
-
-	clr r25
-
-Read_Loop:
-	ldi r16, 0x0
-	rcall I2C_Receive
-
-	rcall Bin2BSD_8
-	rcall PrintBSD8
-
-	ldi r19, 13
-	rcall Print
-
-	inc r25
-	cpi r25, 24
-	brne Read_Loop
-
-	ldi r16, 0x1
-	rcall I2C_Receive
-
-	rjmp Read_Exit
-
-Read_NACK:
-	mprintln "READ NACK"
-
-Read_Exit:
-	rcall I2C_SendStop
 
  
 ; End External Hardware Init ==============================
@@ -842,6 +781,61 @@ LIS_TestPrint:
 
 	ret
 
+
+; --------------------------------------------
+; LIS_PrintMemory
+; Send whole memory to an UART starting from CTRL_REG1
+;
+; IN:	None
+; OUT:	None
+; --------------------------------------------
+LIS_PrintMemory:
+	rcall I2C_SendStart
+
+	ldi r16, LIS_ADDRESS << 1 | 0
+	rcall I2C_Trasmit
+	sbrc r16, 0
+	rjmp LIS_PrintMemory_NACK
+
+	ldi r16, (1 << 7) | 0x20
+	rcall I2C_Trasmit
+	sbrc r16, 0
+	rjmp LIS_PrintMemory_NACK
+
+	rcall I2C_SendStart
+
+	ldi r16, LIS_ADDRESS << 1 | 1
+	rcall I2C_Trasmit
+	sbrc r16, 0
+	rjmp LIS_PrintMemory_NACK
+
+	clr r25 ; Counter for printed registers
+
+Read_Loop:
+	ldi r16, 0x0
+	rcall I2C_Receive
+
+	rcall Bin2BSD_8
+	rcall PrintBSD8
+
+	ldi r19, 13
+	rcall Print
+
+	inc r25
+	cpi r25, 24
+	brne Read_Loop	; If read the one before the last
+
+	ldi r16, 0x1
+	rcall I2C_Receive
+
+	rjmp LIS_PrintMemory_Exit
+
+LIS_PrintMemory_NACK:
+	mprintln "LIS_PrintMemory NACK"
+
+LIS_PrintMemory_Exit:
+	rcall I2C_SendStop
+	ret
 
 ; End Procedure ===========================================
 
