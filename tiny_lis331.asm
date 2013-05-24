@@ -37,6 +37,8 @@
 .equ LIS_X_L = 0x28
 .equ LIS_Y_L = 0x2a
 .equ LIS_Z_L = 0x2c
+
+.equ Threshold = 15
  
 ; End macro.inc ===========================================
  
@@ -44,7 +46,9 @@
 ; RAM =====================================================
 .DSEG
 
-	TCNT: .byte 47
+	MC_CNT: .byte 4 	; Main Cycle counter
+	REST_CNT: .byte 4 	; Counter for resting time
+
 	TX_ptr: .byte 2
 
 	X_MSB: .byte 1
@@ -55,6 +59,11 @@
 
 	Z_MSB: .byte 1
 	Z_LSB: .byte 1
+
+	X_MSB_prev: .byte 1
+	Y_MSB_prev: .byte 1
+	Z_MSB_prev: .byte 1
+	Prev_diff:  .byte 1
 
 
 ; FLASH =================================================== 
@@ -134,6 +143,7 @@ Interrupt_Table:
 
 .include "uart.inc"
 .include "coreinit.inc"
+.include "i2c.inc"
 
 ; Interrupts ==============================================
 
@@ -143,7 +153,8 @@ Timer0_OVF:
 	push r18
 	push r19
 
-	incm TCNT
+	incm MC_CNT
+	incm REST_CNT
 
 	pop r19
 	pop r18
@@ -174,6 +185,9 @@ Reset:
 	;Memory, Registers and Stack initialization
 	RAM_Flush
 
+	ldi r16, 137
+	rcall abs_print
+
 ; Internal Hardware Init  =================================
 
 	setbm DDRD, 6 ;PB6 is output
@@ -198,9 +212,9 @@ Reset:
 	; LIS331DLH Init
 	rcall LIS_Init
 
-	rcall I2C_Delay
+	; rcall I2C_Delay
 
-	rcall LIS_PrintMemory
+	; rcall LIS_PrintMemory
 
 
  
@@ -227,8 +241,8 @@ Reset:
 	clrb PORTD, 6, r16
 
 Main:
-	lds r16, TCNT
-	lds r17, TCNT+1
+	lds r16, MC_CNT
+	lds r17, MC_CNT+1
 
 	cpi r16, 0x42
 	brcs NoMatch_Short
@@ -246,19 +260,74 @@ Match:
 	; rjmp END_LOOP
 
 	rcall LIS_Update
-
 	rcall LIS_TestPrint
 
+	rjmp END_LOOP
+
+	clr r18 ; sign
+
+	lds r16, X_MSB
+	lds r17, X_MSB_prev
+	sts X_MSB_prev, r16
+	sub r16, r17
+
+	brlt Negative
+	rjmp END_LOOP
+
+Negative:
+	brvs Overflow
+
+	ser r18 ; sign
+
+	; abs
+	subi r16, 1
+	ser  r17
+	eor  r16, r17
+
+	rjmp END_LOOP
+
+Overflow:
+	ser r17
+	sub r17, r16
+	inc r17
+	mov r16, r17
+
+	ser r18 ; sign
 
 END_LOOP:
+	; push r16
+
+; 	sbrs r18, 0 	; Negative?
+; 	rjmp Positive
+
+; 	ldi r19, '-'
+; 	rcall Print
+
+; Positive:
+; 	rcall Bin2BSD_8
+; 	rcall PrintBSD8
+
+; 	; ldi r19, ' '
+; 	; rcall Print
+
+; 	; lds r16, Prev_diff	
+
+; 	; rcall Bin2BSD_8
+; 	; rcall PrintBSD8
+
+; 	ldi r19, 13
+; 	rcall Print
+
+
 	clr r16
+
 	cli
 
 	outu TCNT0, r16
-	sts  TCNT, r16
-	sts  TCNT+1, r16
-	sts	 TCNT+2, r16
-	sts	 TCNT+3, r16
+	sts  MC_CNT, r16
+	sts  MC_CNT + 1, r16
+	sts	 MC_CNT + 2, r16
+	sts	 MC_CNT + 3, r16
 
 	sei
 
@@ -270,228 +339,6 @@ NoMatch:
 
 
 ; Procedure ===============================================
-
-; --------------------------------------------
-; I2C_Init
-;
-; IN\OUT: None
-; --------------------------------------------
-I2C_Init:
-#ifdef I2C_DEBUG
-	mprintln "INIT"
-#endif
-
-	setb PORT_USI, SCL_PIN, r16
-	setb PORT_USI, SDA_PIN, r16
-
-	; clrb PORT_USI, SCL_PIN, r16
-	; clrb PORT_USI, SDA_PIN, r16
-
-	setb DDR_USI, SCL_PIN, r16
-	setb DDR_USI, SDA_PIN, r16
-
-	; clrb DDR_USI, SCL_PIN, r16
-	; clrb DDR_USI, SDA_PIN, r16
-
-	outi USIDR, 0xff
-	outi USICR, (1<<USIWM1) | (1<<USICS1) | (0<<USICS0) | (1<<USICLK) | (0<<USITC)
-	outi USISR, (1<<USISIF) | (1<<USIOIF) | (1<<USIPF) | (1<<USIDC) | (0x0<<USICNT0)
-	ret
-
-
-; --------------------------------------------
-; I2C_Delay
-;
-; IN\OUT: None
-; --------------------------------------------
-I2C_Delay:
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	nop
-	ret
-
-
-; --------------------------------------------
-; I2C_Wait4SCL
-;
-; IN\OUT: None
-; --------------------------------------------
-I2C_Wait4SCL:
-	sbis PORT_USI, SCL_PIN
-	rjmp I2C_Wait4SCL
-	ret
-
-
-; --------------------------------------------
-; I2C_Transeive
-;
-; IN: r16 - USISR
-; OUT: r16 - data
-; --------------------------------------------
-I2C_Transeive:
-	outu USISR, r16
-
-	ldi r17, (1<<USIWM1) | (1<<USICS1) | (0<<USICS0) | (1<<USICLK) | (1<<USITC)
-
-i2c_transeive_loop:
-	rcall I2C_Delay
-	outu USICR, r17
-	rcall I2C_Wait4SCL
-	rcall I2C_Delay
-	outu USICR, r17
-
-	sbis USISR, USIOIF
-	rjmp i2c_transeive_loop
-
-	rcall I2C_Delay
-	in r16, USIDR
-
-	ldi r17, 0xff
-	out USIDR, r17
-
-	setb DDR_USI, SDA_PIN, r17
-	ret
-
-
-; --------------------------------------------
-; I2C_Trasmit
-;
-; IN:  r16 - data
-; OUT: r16 - 0 OK, 1 Error
-; --------------------------------------------
-I2C_Trasmit:
-#ifdef I2C_DEBUG
-	push r16
-	mprintln "Transmit"
-	pop r16
-#endif
-	clrb PORT_USI, SCL_PIN, r17
-	outu USIDR, r16
-
-	ldi r16, USISR_8bit
-	rcall I2C_Transeive
-
-	clrb DDR_USI, SDA_PIN, r16
-
-#ifdef I2C_DEBUG
-	mprintln "Reading (N)ACK"
-#endif
-	ldi r16, USISR_1bit
-	rcall I2C_Transeive
-
-	sbrs r16, 0
-	rjmp  i2c_trasmit_ack
-
-i2c_trasmit_nack:
-#ifdef I2C_DEBUG
-	push r16
-	mprintln "Get NACK"
-	pop r16
-#endif
-	
-	rjmp i2c_trasmit_exit
-
-i2c_trasmit_ack:
-#ifdef I2C_DEBUG
-	push r16
-	mprintln "Get ACK"
-	pop r16
-#endif
-
-i2c_trasmit_exit:	
-	andi r16, 0x01
-	ret
-
-
-; --------------------------------------------
-; I2C_Receive
-;
-; IN:  r16 - 0x0 (ACK) or 0x1 (NACK)
-; OUT: r16 - data
-; --------------------------------------------
-I2C_Receive:
-	push r16						; Save ACK/NACK input
-
-#ifdef I2C_DEBUG
-	push r16
-	mprintln "Read"
-	pop r16
-#endif
-
-	clrb DDR_USI, SDA_PIN, r17
-
-	ldi r16, USISR_8bit
-	rcall I2C_Transeive
-
-	pop  r18						; Get ACK/NACK input
-	push r16						; Save read data
-
-#ifdef I2C_DEBUG
-	push r16
-	mprintln "Sending (N)ACK"
-	pop r16
-#endif
-
-	outu USIDR, r18
-	ldi r16, USISR_1bit
-	rcall I2C_Transeive
-
-	pop r16
-	ret
-
-
-; --------------------------------------------
-; I2C_SendStart
-;
-; IN\OUT: None
-; --------------------------------------------
-I2C_SendStart:
-#ifdef I2C_DEBUG
-	mprintln "START"
-#endif
-
-	; clrb DDR_USI, SDA_PIN, r16 ; SDA - high ####
-	setb PORT_USI, SDA_PIN, r16; SDA - high
-
-	setb PORT_USI, SCL_PIN, r16 ; SCL - high
-	; clrb DDR_USI, SCL_PIN, r16
-	rcall I2C_Wait4SCL
-	rcall I2C_Delay
-
-	clrb PORT_USI, SDA_PIN, r16 ; SDA - low
-
-	rcall I2C_Delay
-	clrb PORT_USI, SCL_PIN, r16 ; SCL - low
-	setb PORT_USI, SDA_PIN, r16 ; SDA - high
-	ret
-
-
-; --------------------------------------------
-; I2C_SendStop
-;
-; IN\OUT: None
-; --------------------------------------------
-I2C_SendStop:
-#ifdef I2C_DEBUG
-	mprintln "STOP"
-#endif
-
-	clrb PORT_USI, SDA_PIN, r16 ; SDA - low
-	setb PORT_USI, SCL_PIN, r16 ; SCL - high
-	rcall I2C_Wait4SCL
-	rcall I2C_Delay
-	setb PORT_USI, SDA_PIN, r16 ; SDA - high
-	; clrb PORT_USI, SCL_PIN, r16 ; SCL - low
-	ret
 
 
 ; --------------------------------------------
@@ -630,6 +477,7 @@ LIS_Update:
 	clr r16
 	push r16	; Counter for repetitions after unsuccessful attempts
 
+LIS_Update_Repeat:
 	rcall I2C_SendStart
 
 	; Establish writing connection
@@ -694,9 +542,10 @@ NACK:
 	cpi r16, 3				; Exit if >= 3
 	brge LIS_Update_Exit
 
-	rjmp LIS_Update
+	rjmp LIS_Update_Repeat
 
 LIS_Update_Exit:
+	pop r16
 	ret
 
 
@@ -711,15 +560,16 @@ LIS_Update_Exit:
 ; --------------------------------------------
 LIS_TestPrint:
 	lds r16, X_MSB
+	rcall abs_print
 	rcall Bin2BSD_8
 	rcall PrintBSD8
 
-	ldi r19, ' '
-	rcall Print
+	; ldi r19, ' '
+	; rcall Print
 
-	lds r16, X_LSB
-	rcall Bin2BSD_8
-	rcall PrintBSD8
+	; lds r16, X_LSB
+	; rcall Bin2BSD_8
+	; rcall PrintBSD8
 			
 	ldi r19, '\t'
 	rcall Print
@@ -728,15 +578,16 @@ LIS_TestPrint:
 
 
 	lds r16, Y_MSB
+	rcall abs_print
 	rcall Bin2BSD_8
 	rcall PrintBSD8
 
-	ldi r19, ' '
-	rcall Print
+	; ldi r19, ' '
+	; rcall Print
 
-	lds r16, Y_LSB
-	rcall Bin2BSD_8
-	rcall PrintBSD8
+	; lds r16, Y_LSB
+	; rcall Bin2BSD_8
+	; rcall PrintBSD8
 			
 	ldi r19, '\t'
 	rcall Print
@@ -745,19 +596,36 @@ LIS_TestPrint:
 
 
 	lds r16, Z_MSB
+	rcall abs_print
 	rcall Bin2BSD_8
 	rcall PrintBSD8
 
-	ldi r19, ' '
-	rcall Print
+	; ldi r19, ' '
+	; rcall Print
 
-	lds r16, Z_LSB
-	rcall Bin2BSD_8
-	rcall PrintBSD8
+	; lds r16, Z_LSB
+	; rcall Bin2BSD_8
+	; rcall PrintBSD8
 
 	ldi r19, 13
 	rcall Print
 
+	ret
+
+abs_print:
+	tst r16
+	brpl abs_end
+
+	subi r16, 1
+	ser r17
+	eor r16, r17
+
+	push r16
+	ldi r19, '-'
+	rcall Print
+	pop r16
+
+abs_end:
 	ret
 
 
@@ -847,6 +715,19 @@ LIS_Init:
 	rcall I2C_Trasmit
 
 	rcall I2C_SendStop
+	ret
+
+
+Backup_XYZ:
+	lds r16, X_MSB
+	sts X_MSB_prev, r16
+
+	lds r16, Y_MSB
+	sts Y_MSB_prev, r16
+
+	lds r16, Y_MSB
+	sts Y_MSB_prev, r16
+
 	ret
 
 
